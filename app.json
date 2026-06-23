@@ -1,0 +1,65 @@
+{
+  "expo": {
+    "name": "Clube Oásis Validador",
+    "slug": "clube-oasis-validador",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "scheme": "clubeoasis",
+    "userInterfaceStyle": "light",
+    "icon": "./assets/logo.png",
+    "splash": {
+      "image": "./assets/logo.png",
+      "resizeMode": "contain",
+      "backgroundColor": "#ffffff"
+    },
+    "runtimeVersion": {
+      "policy": "appVersion"
+    },
+    "updates": {
+      "enabled": true,
+      "checkAutomatically": "ON_LOAD",
+      "fallbackToCacheTimeout": 0
+    },
+    "ios": {
+      "supportsTablet": true,
+      "bundleIdentifier": "br.com.clubeoasis.validador",
+      "infoPlist": {
+        "NSCameraUsageDescription": "O validador usa a câmera para ler o QR Code dos ingressos na portaria."
+      }
+    },
+    "android": {
+      "package": "br.com.clubeoasis.validador",
+      "permissions": [
+        "CAMERA",
+        "android.permission.CAMERA",
+        "android.permission.RECORD_AUDIO"
+      ],
+      "adaptiveIcon": {
+        "foregroundImage": "./assets/logo.png",
+        "backgroundColor": "#ffffff"
+      }
+    },
+    "plugins": [
+      "expo-router",
+      [
+        "expo-camera",
+        {
+          "cameraPermission": "O validador usa a câmera para ler o QR Code dos ingressos na portaria."
+        }
+      ],
+      "expo-asset",
+      "expo-font",
+      "expo-updates"
+    ],
+    "experiments": {
+      "typedRoutes": true
+    },
+    "extra": {
+      "router": {},
+      "eas": {
+        "projectId": "73e663d3-7a39-4e86-956c-791097d4fa3c"
+      }
+    },
+    "owner": "joaovitorlealsavar"
+  }
+}
