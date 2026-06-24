@@ -12,6 +12,7 @@
     "preview": {
       "distribution": "internal",
       "channel": "production",
+      "environment": "preview",
       "android": {
         "buildType": "apk"
       }
@@ -19,6 +20,7 @@
     "production": {
       "distribution": "internal",
       "channel": "production",
+      "environment": "production",
       "android": {
         "buildType": "apk"
       }
