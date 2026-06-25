@@ -6,45 +6,44 @@ import {
   Pressable,
   ActivityIndicator,
   ScrollView,
+  TextInput,
 } from "react-native";
 import { CameraView, useCameraPermissions } from "expo-camera";
 import { Ionicons } from "@expo/vector-icons";
+import { useRouter } from "expo-router";
 import { useAuth } from "@/lib/auth";
 import { supabase } from "@/lib/supabase";
-import { colors, formatBRL } from "@/lib/theme";
+import { fonts, useTheme, formatBRL } from "@/lib/theme";
+import { PremiumShell } from "@/components/PremiumShell";
 import type { ItemPedido, Pedido, ScanResult } from "@/lib/types";
 
 type Phase = "scanning" | "loading" | "result" | "error";
 type ValidationNotice = "none" | "validated" | "already";
 
-/** UUID v1-v5 (formato do pedido.id, gerado por gen_random_uuid). */
 const UUID_RE =
   /[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}/i;
 
-/**
- * Extrai o ID do pedido do conteúdo do QR.
- * Aceita o UUID puro ou uma URL que contenha o UUID (ex.: link do ingresso).
- */
 function extractPedidoId(raw: string): string | null {
   const match = raw.trim().match(UUID_RE);
   return match ? match[0] : null;
 }
 
-/** Quantidade de um tipo de ingresso dentro do array items[]. */
 function qty(items: ItemPedido[] | undefined, id: ItemPedido["id"]): number {
   return items?.find((i) => i.id === id)?.quantity ?? 0;
 }
 
 export default function Scanner() {
   const { user } = useAuth();
+  const { theme } = useTheme();
+  const router = useRouter();
   const [permission, requestPermission] = useCameraPermissions();
 
   const [phase, setPhase] = useState<Phase>("scanning");
   const [result, setResult] = useState<ScanResult | null>(null);
   const [validatorName, setValidatorName] = useState<string | null>(null);
-  const [validationNotice, setValidationNotice] =
-    useState<ValidationNotice>("none");
+  const [validationNotice, setValidationNotice] = useState<ValidationNotice>("none");
   const [message, setMessage] = useState<string>("");
+  const [manualCode, setManualCode] = useState("");
 
   const reset = useCallback(() => {
     setResult(null);
@@ -56,7 +55,6 @@ export default function Scanner() {
 
   const handleScan = useCallback(
     async ({ data }: { data: string }) => {
-      // onBarcodeScanned dispara continuamente; só processamos no estado "scanning".
       setPhase((prev) => {
         if (prev !== "scanning") return prev;
         return "loading";
@@ -86,10 +84,8 @@ export default function Scanner() {
         return;
       }
 
-      // Nome do comprador vem embutido no próprio pedido (comprador jsonb).
       const buyerName = pedido.comprador?.nome?.trim() || "Sem nome cadastrado";
 
-      // Se já validado, busca quem validou (tabela usuarios) para exibir.
       if (pedido.validated_by) {
         await resolveValidator(pedido.validated_by);
       }
@@ -101,11 +97,7 @@ export default function Scanner() {
         setMessage("");
       }
 
-      setResult({
-        pedido,
-        buyerName,
-        totalTickets: pedido.totalQuantity,
-      });
+      setResult({ pedido, buyerName, totalTickets: pedido.totalQuantity });
       setPhase("result");
     },
     []
@@ -124,13 +116,9 @@ export default function Scanner() {
     if (!result || !user) return;
     setPhase("loading");
 
-    // Atualiza só se ainda não validado (.is validated_at null) → previne baixa dupla.
     const { data: updated, error } = await supabase
       .from("pedidos")
-      .update({
-        validated_at: new Date().toISOString(),
-        validated_by: user.id,
-      })
+      .update({ validated_at: new Date().toISOString(), validated_by: user.id })
       .eq("id", result.pedido.id)
       .is("validated_at", null)
       .select()
@@ -143,7 +131,6 @@ export default function Scanner() {
     }
 
     if (!updated) {
-      // 0 linhas afetadas → já tinha sido validado por outra pessoa/aparelho.
       const { data: fresh } = await supabase
         .from("pedidos")
         .select("*")
@@ -166,347 +153,415 @@ export default function Scanner() {
     setPhase("result");
   }
 
-  // ── Permissão de câmera ──
+  function handleTabChange(tab: string) {
+    if (tab !== "validar") {
+      router.replace({ pathname: "/(app)/dashboard", params: { tab } });
+    }
+  }
+
+  function handleManualValidation() {
+    if (!manualCode.trim()) return;
+    void handleScan({ data: manualCode });
+  }
+
+  // ── Permissão não carregada ──
   if (!permission) {
     return (
-      <View style={styles.center}>
-        <ActivityIndicator color={colors.sky} />
-      </View>
-    );
-  }
-  if (!permission.granted) {
-    return (
-      <View style={styles.center}>
-        <Ionicons name="camera-outline" size={48} color={colors.textMuted} />
-        <Text style={styles.permTitle}>Câmera necessária</Text>
-        <Text style={styles.permText}>
-          O validador precisa da câmera para ler o QR Code dos ingressos.
-        </Text>
-        <Pressable
-          onPress={requestPermission}
-          style={({ pressed }) => [styles.primaryBtn, pressed && styles.pressed]}
-        >
-          <Text style={styles.primaryBtnText}>Permitir câmera</Text>
-        </Pressable>
-      </View>
+      <PremiumShell activeTab="validar" onTabChange={handleTabChange as any}>
+        <View style={[s.center, { backgroundColor: theme.bg }]}>
+          <ActivityIndicator color={theme.accent} />
+        </View>
+      </PremiumShell>
     );
   }
 
-  // ── Resultado da leitura / validação ──
+  // ── Sem permissão ──
+  if (!permission.granted) {
+    return (
+      <PremiumShell activeTab="validar" onTabChange={handleTabChange as any}>
+        <View style={[s.center, { backgroundColor: theme.bg }]}>
+          <View style={[s.permIcon, { backgroundColor: theme.surface2 }]}>
+            <Ionicons name="camera-outline" size={36} color={theme.text3} />
+          </View>
+          <Text style={[s.permTitle, { color: theme.text }]}>Câmera necessária</Text>
+          <Text style={[s.permText, { color: theme.text2 }]}>
+            O validador precisa da câmera para ler o QR Code dos ingressos.
+          </Text>
+          <Pressable
+            onPress={requestPermission}
+            style={[s.accentBtn, { backgroundColor: theme.accent }]}
+          >
+            <Text style={[s.accentBtnText, { color: theme.onAccent }]}>Permitir câmera</Text>
+          </Pressable>
+        </View>
+      </PremiumShell>
+    );
+  }
+
+  // ── Resultado ──
   if (phase === "result" && result) {
     const validated = !!result.pedido.validated_at;
     const alreadyValidated = validated && validationNotice === "already";
-    const visit = new Date(
-      result.pedido.visitDate + "T12:00:00"
-    ).toLocaleDateString("pt-BR");
+    const visit = new Date(result.pedido.visitDate + "T12:00:00").toLocaleDateString("pt-BR");
     const validatedAt = result.pedido.validated_at
       ? new Date(result.pedido.validated_at).toLocaleString("pt-BR")
       : null;
 
+    const bannerColor = alreadyValidated ? theme.red : validated ? theme.green : theme.amber;
+    const bannerBg = alreadyValidated ? theme.amberBg : validated ? theme.greenBg : theme.amberBg;
+
     return (
-      <ScrollView
-        style={styles.resultScroll}
-        contentContainerStyle={styles.resultContent}
-      >
-        <View
-          style={[
-            styles.statusBanner,
-            {
-              backgroundColor: alreadyValidated
-                ? colors.red
-                : validated
-                  ? colors.emerald
-                  : colors.amber,
-            },
-          ]}
+      <PremiumShell activeTab="validar" onTabChange={handleTabChange as any}>
+        <ScrollView
+          style={{ flex: 1, backgroundColor: theme.bg }}
+          contentContainerStyle={s.resultContent}
         >
-          <Ionicons
-            name={
-              alreadyValidated
-                ? "close-circle"
-                : validated
-                  ? "checkmark-circle"
-                  : "alert-circle"
-            }
-            size={28}
-            color={colors.white}
-          />
-          <Text style={styles.statusBannerText}>
-            {alreadyValidated
-              ? "INGRESSO JÁ VALIDADO"
-              : validated
-                ? "INGRESSO VALIDADO"
-                : "INGRESSO PENDENTE"}
-          </Text>
-        </View>
-
-        {message ? <Text style={styles.warnMsg}>⚠️ {message}</Text> : null}
-
-        <View style={styles.infoCard}>
-          <InfoLine label="Comprador" value={result.buyerName} />
-          <InfoLine label="Data da visita" value={visit} />
-          <InfoLine
-            label="Ingressos"
-            value={`${result.totalTickets} no total`}
-          />
-          <View style={styles.breakdown}>
-            <Chip label={`Inteira ${qty(result.pedido.items, "inteira")}`} />
-            <Chip label={`Meia ${qty(result.pedido.items, "meia")}`} />
-            <Chip label={`Infantil ${qty(result.pedido.items, "infantil")}`} />
-          </View>
-          <InfoLine
-            label="Valor pago"
-            value={formatBRL(Number(result.pedido.total))}
-          />
-          {validated && validatedAt && (
-            <InfoLine
-              label="Validado em"
-              value={`${validatedAt}${validatorName ? `\npor ${validatorName}` : ""}`}
+          {/* Banner de status */}
+          <View style={[s.statusBanner, { backgroundColor: bannerBg, borderColor: bannerColor + '40' }]}>
+            <Ionicons
+              name={alreadyValidated ? "close-circle" : validated ? "checkmark-circle" : "alert-circle"}
+              size={26}
+              color={bannerColor}
             />
+            <Text style={[s.statusBannerText, { color: bannerColor }]}>
+              {alreadyValidated ? "INGRESSO JÁ VALIDADO" : validated ? "INGRESSO VALIDADO" : "INGRESSO PENDENTE"}
+            </Text>
+          </View>
+
+          {message ? (
+            <View style={[s.warnBox, { backgroundColor: theme.amberBg, borderColor: theme.amber + '40', borderWidth: 1 }]}>
+              <Text style={[s.warnText, { color: theme.amber }]}>{message}</Text>
+            </View>
+          ) : null}
+
+          {/* Card de informações */}
+          <View style={[s.infoCard, { backgroundColor: theme.surface, borderColor: theme.border, ...theme.shadowStyle }]}>
+            <InfoLine label="Comprador" value={result.buyerName} />
+            <InfoLine label="Data da visita" value={visit} />
+            <InfoLine label="Ingressos" value={`${result.totalTickets} no total`} />
+            <View style={s.chips}>
+              <Chip label={`Inteira ${qty(result.pedido.items, "inteira")}`} />
+              <Chip label={`Meia ${qty(result.pedido.items, "meia")}`} />
+              <Chip label={`Infantil ${qty(result.pedido.items, "infantil")}`} />
+            </View>
+            <InfoLine label="Valor pago" value={formatBRL(Number(result.pedido.total))} />
+            {validated && validatedAt && (
+              <InfoLine
+                label="Validado em"
+                value={`${validatedAt}${validatorName ? `\npor ${validatorName}` : ""}`}
+              />
+            )}
+          </View>
+
+          {/* Ação */}
+          {!validated ? (
+            <Pressable
+              onPress={confirmValidation}
+              style={({ pressed }) => [
+                s.validateBtn,
+                { backgroundColor: theme.green, opacity: pressed ? 0.8 : 1 },
+              ]}
+            >
+              <Ionicons name="checkmark-done" size={22} color="#fff" />
+              <Text style={s.validateBtnText}>VALIDAR ENTRADA</Text>
+            </Pressable>
+          ) : (
+            <View style={[s.alreadyBox, { backgroundColor: alreadyValidated ? theme.amberBg : theme.greenBg, borderColor: (alreadyValidated ? theme.amber : theme.green) + '40', borderWidth: 1 }]}>
+              <Text style={[s.alreadyText, { color: alreadyValidated ? theme.amber : theme.green }]}>
+                Entrada já liberada — não validar novamente.
+              </Text>
+            </View>
+          )}
+
+          <Pressable
+            onPress={reset}
+            style={({ pressed }) => [s.nextBtn, { opacity: pressed ? 0.6 : 1 }]}
+          >
+            <Ionicons name="qr-code-outline" size={20} color={theme.accent} />
+            <Text style={[s.nextBtnText, { color: theme.accent }]}>Escanear próximo</Text>
+          </Pressable>
+        </ScrollView>
+      </PremiumShell>
+    );
+  }
+
+  // ── Erro ──
+  if (phase === "error") {
+    return (
+      <PremiumShell activeTab="validar" onTabChange={handleTabChange as any}>
+        <View style={[s.center, { backgroundColor: theme.bg }]}>
+          <View style={[s.permIcon, { backgroundColor: theme.amberBg }]}>
+            <Ionicons name="close-circle" size={36} color={theme.red} />
+          </View>
+          <Text style={[s.permTitle, { color: theme.text }]}>Não foi possível ler</Text>
+          <Text style={[s.permText, { color: theme.text2 }]}>{message}</Text>
+          <Pressable
+            onPress={reset}
+            style={[s.accentBtn, { backgroundColor: theme.accent }]}
+          >
+            <Text style={[s.accentBtnText, { color: theme.onAccent }]}>Tentar de novo</Text>
+          </Pressable>
+        </View>
+      </PremiumShell>
+    );
+  }
+
+  // ── Câmera ativa ──
+  return (
+    <PremiumShell activeTab="validar" onTabChange={handleTabChange as any}>
+      <View style={s.cameraContent}>
+        {/* Título + subtítulo */}
+        <Text style={[s.scanTitle, { color: theme.text }]}>Validar ingresso</Text>
+        <Text style={[s.scanSubtitle, { color: theme.text2 }]}>
+          Aponte a câmera para o QR Code do ingresso
+        </Text>
+
+        {/* Visor */}
+        <View style={[s.viewfinder, { backgroundColor: theme.surface2 }]}>
+          <CameraView
+            style={StyleSheet.absoluteFill}
+            facing="back"
+            barcodeScannerSettings={{ barcodeTypes: ["qr"] }}
+            onBarcodeScanned={phase === "scanning" ? handleScan : undefined}
+          />
+          {/* Cantos em L */}
+          <View style={[s.cornerTL, { borderColor: theme.accent }]} />
+          <View style={[s.cornerTR, { borderColor: theme.accent }]} />
+          <View style={[s.cornerBL, { borderColor: theme.accent }]} />
+          <View style={[s.cornerBR, { borderColor: theme.accent }]} />
+          {/* Linha de varredura */}
+          {phase === "scanning" && (
+            <View style={[s.scanLine, { backgroundColor: theme.accent }]} />
+          )}
+          {phase === "loading" && (
+            <View style={[s.loadOverlay, { backgroundColor: 'rgba(0,0,0,0.5)' }]}>
+              <ActivityIndicator color={theme.accent} size="large" />
+              <Text style={[s.loadText, { color: theme.text }]}>Lendo ingresso...</Text>
+            </View>
           )}
         </View>
 
-        {!validated ? (
-          <Pressable
-            onPress={confirmValidation}
-            style={({ pressed }) => [styles.validateBtn, pressed && styles.pressed]}
-          >
-            <Ionicons name="checkmark-done" size={22} color={colors.white} />
-            <Text style={styles.validateBtnText}>VALIDAR ENTRADA</Text>
-          </Pressable>
-        ) : (
-          <View style={alreadyValidated ? styles.alreadyErrorBox : styles.alreadyBox}>
-            <Text style={alreadyValidated ? styles.alreadyErrorText : styles.alreadyText}>
-              Entrada já liberada — não validar novamente.
-            </Text>
-          </View>
-        )}
-
-        <Pressable
-          onPress={reset}
-          style={({ pressed }) => [styles.scanNextBtn, pressed && styles.pressed]}
-        >
-          <Ionicons name="qr-code-outline" size={20} color={colors.sky} />
-          <Text style={styles.scanNextText}>Escanear próximo</Text>
-        </Pressable>
-      </ScrollView>
-    );
-  }
-
-  // ── Erro de leitura ──
-  if (phase === "error") {
-    return (
-      <View style={styles.center}>
-        <Ionicons name="close-circle" size={48} color={colors.red} />
-        <Text style={styles.permTitle}>Não foi possível ler</Text>
-        <Text style={styles.permText}>{message}</Text>
-        <Pressable
-          onPress={reset}
-          style={({ pressed }) => [styles.primaryBtn, pressed && styles.pressed]}
-        >
-          <Text style={styles.primaryBtnText}>Tentar de novo</Text>
-        </Pressable>
-      </View>
-    );
-  }
-
-  // ── Câmera ativa (scanning / loading) ──
-  return (
-    <View style={styles.cameraWrap}>
-      <CameraView
-        style={StyleSheet.absoluteFill}
-        facing="back"
-        barcodeScannerSettings={{ barcodeTypes: ["qr"] }}
-        onBarcodeScanned={phase === "scanning" ? handleScan : undefined}
-      />
-      <View style={styles.overlay} pointerEvents="none">
-        <View style={styles.frame} />
-        <Text style={styles.hint}>
-          {phase === "loading"
-            ? "Lendo ingresso..."
-            : "Aponte para o QR Code do ingresso"}
-        </Text>
-      </View>
-      {phase === "loading" && (
-        <View style={styles.loadingOverlay}>
-          <ActivityIndicator color={colors.white} size="large" />
+        {/* Divisor */}
+        <View style={s.divider}>
+          <View style={[s.dividerLine, { backgroundColor: theme.border }]} />
+          <Text style={[s.dividerText, { color: theme.text3 }]}>ou informe o código</Text>
+          <View style={[s.dividerLine, { backgroundColor: theme.border }]} />
         </View>
-      )}
-    </View>
+
+        {/* Input manual usando a mesma leitura do QR Code */}
+        <TextInput
+          value={manualCode}
+          onChangeText={setManualCode}
+          placeholder="Código do ingresso"
+          placeholderTextColor={theme.text3}
+          autoCapitalize="none"
+          autoCorrect={false}
+          editable={phase === "scanning"}
+          returnKeyType="go"
+          onSubmitEditing={handleManualValidation}
+          style={[
+            s.codeInput,
+            { borderColor: theme.border, backgroundColor: theme.surface2, color: theme.text },
+          ]}
+        />
+
+        <Pressable
+          disabled={phase !== "scanning" || !manualCode.trim()}
+          style={[
+            s.validateBtnFull,
+            {
+              backgroundColor: theme.accent,
+              opacity: phase !== "scanning" || !manualCode.trim() ? 0.6 : 1,
+            },
+          ]}
+          onPress={handleManualValidation}
+        >
+          <Text style={[s.validateBtnFullText, { color: theme.onAccent }]}>Validar código</Text>
+        </Pressable>
+      </View>
+    </PremiumShell>
   );
 }
 
+// ─── Sub-componentes ──────────────────────────────────────────────────────────
+
 function InfoLine({ label, value }: { label: string; value: string }) {
+  const { theme } = useTheme();
   return (
-    <View style={styles.infoLine}>
-      <Text style={styles.infoLabel}>{label}</Text>
-      <Text style={styles.infoValue}>{value}</Text>
+    <View style={s.infoLine}>
+      <Text style={[s.infoLabel, { color: theme.text2 }]}>{label}</Text>
+      <Text style={[s.infoValue, { color: theme.text }]}>{value}</Text>
     </View>
   );
 }
 
 function Chip({ label }: { label: string }) {
+  const { theme } = useTheme();
   return (
-    <View style={styles.chip}>
-      <Text style={styles.chipText}>{label}</Text>
+    <View style={[s.chip, { backgroundColor: theme.accentSoft }]}>
+      <Text style={[s.chipText, { color: theme.accent }]}>{label}</Text>
     </View>
   );
 }
 
-const styles = StyleSheet.create({
+// ─── Styles ──────────────────────────────────────────────────────────────────
+
+const s = StyleSheet.create({
   center: {
     flex: 1,
-    alignItems: "center",
-    justifyContent: "center",
+    alignItems: 'center',
+    justifyContent: 'center',
     padding: 24,
-    gap: 10,
-    backgroundColor: colors.bg,
+    gap: 12,
   },
-  permTitle: { fontSize: 18, fontWeight: "800", color: colors.text },
-  permText: {
-    fontSize: 14,
-    color: colors.textMuted,
-    textAlign: "center",
-    lineHeight: 20,
+  permIcon: {
+    width: 72,
+    height: 72,
+    borderRadius: 22,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 4,
   },
-  primaryBtn: {
-    backgroundColor: colors.sky,
-    borderRadius: 999,
-    paddingVertical: 13,
+  permTitle: { fontSize: 18, fontFamily: fonts.extrabold },
+  permText: { fontSize: 14, fontFamily: fonts.medium, textAlign: 'center', lineHeight: 20 },
+  accentBtn: {
+    borderRadius: 12,
+    paddingVertical: 14,
     paddingHorizontal: 28,
     marginTop: 8,
+    minHeight: 48,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
-  primaryBtnText: { color: colors.white, fontWeight: "800", fontSize: 15 },
-  pressed: { opacity: 0.7 },
+  accentBtnText: { fontFamily: fonts.bold, fontSize: 15 },
 
-  // câmera
-  cameraWrap: { flex: 1, backgroundColor: "#000" },
-  overlay: {
-    position: "absolute",
-    top: 0,
-    left: 0,
-    right: 0,
-    bottom: 0,
-    alignItems: "center",
-    justifyContent: "center",
+  // Camera / scanner
+  cameraContent: {
+    flex: 1,
+    alignItems: 'center',
+    paddingHorizontal: 14,
+    paddingTop: 20,
+    paddingBottom: 16,
   },
-  frame: {
-    width: 240,
-    height: 240,
-    borderWidth: 3,
-    borderColor: colors.white,
-    borderRadius: 24,
-    backgroundColor: "transparent",
-  },
-  hint: {
-    color: colors.white,
-    fontWeight: "700",
-    fontSize: 15,
+  scanTitle: { fontSize: 16, fontFamily: fonts.extrabold, letterSpacing: -0.1 },
+  scanSubtitle: { fontSize: 13, fontFamily: fonts.medium, marginTop: 6, textAlign: 'center', maxWidth: 230, lineHeight: 18 },
+  viewfinder: {
+    width: 220,
+    height: 220,
+    borderRadius: 22,
     marginTop: 24,
-    textAlign: "center",
-    paddingHorizontal: 24,
-    textShadowColor: "rgba(0,0,0,0.6)",
-    textShadowRadius: 4,
+    marginBottom: 8,
+    overflow: 'hidden',
+    position: 'relative',
   },
-  loadingOverlay: {
-    position: "absolute",
-    top: 0,
-    left: 0,
-    right: 0,
-    bottom: 0,
-    backgroundColor: "rgba(0,0,0,0.45)",
-    alignItems: "center",
-    justifyContent: "center",
+  cornerTL: {
+    position: 'absolute', top: 14, left: 14,
+    width: 34, height: 34,
+    borderTopWidth: 3, borderLeftWidth: 3,
+    borderTopLeftRadius: 12,
   },
-
-  // resultado
-  resultScroll: { flex: 1, backgroundColor: colors.bg },
-  resultContent: { padding: 16, paddingBottom: 40 },
-  statusBanner: {
-    flexDirection: "row",
-    alignItems: "center",
+  cornerTR: {
+    position: 'absolute', top: 14, right: 14,
+    width: 34, height: 34,
+    borderTopWidth: 3, borderRightWidth: 3,
+    borderTopRightRadius: 12,
+  },
+  cornerBL: {
+    position: 'absolute', bottom: 14, left: 14,
+    width: 34, height: 34,
+    borderBottomWidth: 3, borderLeftWidth: 3,
+    borderBottomLeftRadius: 12,
+  },
+  cornerBR: {
+    position: 'absolute', bottom: 14, right: 14,
+    width: 34, height: 34,
+    borderBottomWidth: 3, borderRightWidth: 3,
+    borderBottomRightRadius: 12,
+  },
+  scanLine: {
+    position: 'absolute',
+    left: 18, right: 18, top: 18,
+    height: 2,
+    borderRadius: 2,
+    opacity: 0.9,
+  },
+  loadOverlay: {
+    ...StyleSheet.absoluteFillObject,
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 12,
+  },
+  loadText: { fontSize: 13, fontFamily: fonts.semibold },
+  divider: {
+    flexDirection: 'row',
+    alignItems: 'center',
     gap: 10,
-    borderRadius: 18,
-    paddingVertical: 16,
-    paddingHorizontal: 18,
+    width: '100%',
+    marginTop: 16,
     marginBottom: 14,
   },
-  statusBannerText: { color: colors.white, fontWeight: "900", fontSize: 17 },
-  warnMsg: {
-    color: colors.redDark,
-    backgroundColor: "#fee2e2",
-    fontWeight: "700",
-    fontSize: 13,
-    padding: 12,
+  dividerLine: { flex: 1, height: 1 },
+  dividerText: { fontSize: 11.5, fontFamily: fonts.medium },
+  codeInput: {
+    width: '100%',
+    borderWidth: 1,
     borderRadius: 12,
-    marginBottom: 14,
+    padding: 13,
+    marginBottom: 10,
+    fontSize: 13,
+    fontFamily: fonts.semibold,
   },
+  validateBtnFull: {
+    width: '100%',
+    height: 48,
+    borderRadius: 12,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  validateBtnFullText: { fontSize: 14, fontFamily: fonts.bold },
+
+  // Result
+  resultContent: { padding: 16, paddingBottom: 40, gap: 12 },
+  statusBanner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    borderRadius: 14,
+    padding: 16,
+    borderWidth: 1,
+  },
+  statusBannerText: { fontFamily: fonts.extrabold, fontSize: 15 },
+  warnBox: { borderRadius: 12, padding: 12 },
+  warnText: { fontSize: 13, fontFamily: fonts.semibold },
   infoCard: {
-    backgroundColor: colors.card,
-    borderRadius: 18,
+    borderRadius: 14,
     padding: 18,
     borderWidth: 1,
-    borderColor: colors.border,
     gap: 14,
   },
   infoLine: { gap: 2 },
-  infoLabel: {
-    fontSize: 12,
-    fontWeight: "700",
-    color: colors.textMuted,
-    textTransform: "uppercase",
-  },
-  infoValue: { fontSize: 17, fontWeight: "700", color: colors.text },
-  breakdown: { flexDirection: "row", gap: 8, flexWrap: "wrap" },
-  chip: {
-    backgroundColor: "#e0f2fe",
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-    borderRadius: 999,
-  },
-  chipText: { color: colors.skyDark, fontWeight: "700", fontSize: 13 },
+  infoLabel: { fontSize: 11, fontFamily: fonts.bold, textTransform: 'uppercase', letterSpacing: 0.3 },
+  infoValue: { fontSize: 16, fontFamily: fonts.bold },
+  chips: { flexDirection: 'row', gap: 8, flexWrap: 'wrap' },
+  chip: { paddingHorizontal: 12, paddingVertical: 6, borderRadius: 999 },
+  chipText: { fontSize: 12.5, fontFamily: fonts.bold },
   validateBtn: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "center",
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
     gap: 10,
-    backgroundColor: colors.emerald,
-    borderRadius: 999,
-    paddingVertical: 16,
-    marginTop: 18,
+    borderRadius: 12,
+    height: 52,
   },
-  validateBtnText: { color: colors.white, fontWeight: "900", fontSize: 16 },
-  alreadyBox: {
-    backgroundColor: "#dcfce7",
-    borderRadius: 14,
-    padding: 14,
-    marginTop: 18,
-  },
-  alreadyErrorBox: {
-    backgroundColor: "#fee2e2",
-    borderColor: "#fecaca",
-    borderWidth: 1,
-    borderRadius: 14,
-    padding: 14,
-    marginTop: 18,
-  },
-  alreadyText: {
-    color: colors.emeraldDark,
-    fontWeight: "700",
-    textAlign: "center",
-  },
-  alreadyErrorText: {
-    color: colors.redDark,
-    fontWeight: "800",
-    textAlign: "center",
-  },
-  scanNextBtn: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "center",
+  validateBtnText: { color: '#fff', fontFamily: fonts.extrabold, fontSize: 16 },
+  alreadyBox: { borderRadius: 14, padding: 14 },
+  alreadyText: { fontFamily: fonts.bold, textAlign: 'center' },
+  nextBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
     gap: 8,
     paddingVertical: 14,
-    marginTop: 10,
   },
-  scanNextText: { color: colors.sky, fontWeight: "800", fontSize: 15 },
+  nextBtnText: { fontFamily: fonts.extrabold, fontSize: 15 },
 });

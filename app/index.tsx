@@ -8,20 +8,24 @@ import {
   ActivityIndicator,
   KeyboardAvoidingView,
   Platform,
+  Image,
+  ScrollView,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
 import { useAuth } from "@/lib/auth";
-import { colors } from "@/lib/theme";
+import { fonts, useTheme } from "@/lib/theme";
+
+const logo = require("../assets/oasis-logo.png");
 
 export default function LoginScreen() {
   const { signIn, signOut, session, isAdmin, loading: authLoading } = useAuth();
+  const { theme } = useTheme();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  // Logado, mas NÃO é admin: bloqueia e oferece sair.
   const loggedButNotAdmin = !authLoading && !!session && !isAdmin;
 
   async function handleLogin() {
@@ -33,106 +37,162 @@ export default function LoginScreen() {
     setSubmitting(true);
     const { error } = await signIn(email, password);
     setSubmitting(false);
-    if (error) {
-      setError(traduzErro(error));
-    }
-    // Sucesso: o RootNavigator redireciona automaticamente para o painel.
+    if (error) setError(traduzErro(error));
   }
 
   return (
-    <SafeAreaView style={styles.safe}>
+    <SafeAreaView style={[styles.safe, { backgroundColor: theme.bg }]}>
       <KeyboardAvoidingView
         style={styles.flex}
         behavior={Platform.OS === "ios" ? "padding" : undefined}
       >
-        <View style={styles.container}>
-          {/* Marca */}
-          <View style={styles.logoWrap}>
-            <View style={styles.logoCircle}>
-              <Ionicons name="water" size={36} color={colors.white} />
+        <ScrollView
+          keyboardShouldPersistTaps="handled"
+          contentContainerStyle={styles.scrollContent}
+          style={{ backgroundColor: theme.bg }}
+        >
+          <View style={styles.brandBlock}>
+            <View
+              style={[
+                styles.logoFrame,
+                {
+                  backgroundColor: theme.surface,
+                  borderColor: theme.border,
+                  ...theme.shadowStyle,
+                },
+              ]}
+            >
+              <Image source={logo} style={styles.logo} resizeMode="contain" />
             </View>
-            <Text style={styles.brand}>Clube Oásis</Text>
-            <Text style={styles.subtitle}>Validador de Ingressos · Portaria</Text>
+
+            <View style={[styles.kicker, { backgroundColor: theme.accentSoft }]}>
+              <Ionicons name="shield-checkmark-outline" size={14} color={theme.accent} />
+              <Text style={[styles.kickerText, { color: theme.accent }]}>Acesso administrativo</Text>
+            </View>
+
+            <Text style={[styles.title, { color: theme.text }]}>Clube Oasis</Text>
+            <Text style={[styles.subtitle, { color: theme.text2 }]}>
+              Validador premium de ingressos para portaria.
+            </Text>
           </View>
 
           {loggedButNotAdmin ? (
-            <View style={styles.card}>
-              <Ionicons
-                name="lock-closed"
-                size={32}
-                color={colors.red}
-                style={{ alignSelf: "center", marginBottom: 8 }}
-              />
-              <Text style={styles.deniedTitle}>Acesso restrito</Text>
-              <Text style={styles.deniedText}>
-                Esta conta não tem permissão de administrador. Entre com uma
-                conta autorizada para usar o validador.
+            <View
+              style={[
+                styles.card,
+                {
+                  backgroundColor: theme.surface,
+                  borderColor: theme.border,
+                  ...theme.shadowStyle,
+                },
+              ]}
+            >
+              <View style={[styles.deniedIcon, { backgroundColor: theme.redBg }]}>
+                <Ionicons name="lock-closed-outline" size={26} color={theme.red} />
+              </View>
+              <Text style={[styles.deniedTitle, { color: theme.text }]}>Acesso restrito</Text>
+              <Text style={[styles.deniedText, { color: theme.text2 }]}>
+                Esta conta não tem permissão de administrador. Entre com uma conta autorizada
+                para usar o validador.
               </Text>
               <Pressable
                 onPress={signOut}
-                style={({ pressed }) => [styles.secondaryBtn, pressed && styles.pressed]}
+                style={({ pressed }) => [
+                  styles.secondaryBtn,
+                  { borderColor: theme.border, backgroundColor: theme.surface2 },
+                  pressed && styles.pressed,
+                ]}
               >
-                <Text style={styles.secondaryBtnText}>Trocar de conta</Text>
+                <Ionicons name="swap-horizontal-outline" size={18} color={theme.text2} />
+                <Text style={[styles.secondaryBtnText, { color: theme.text2 }]}>Trocar de conta</Text>
               </Pressable>
             </View>
           ) : (
-            <View style={styles.card}>
-              <Text style={styles.label}>E-mail</Text>
-              <TextInput
-                value={email}
-                onChangeText={setEmail}
-                placeholder="seu@email.com"
-                placeholderTextColor={colors.textMuted}
-                autoCapitalize="none"
-                autoCorrect={false}
-                keyboardType="email-address"
-                inputMode="email"
-                style={styles.input}
-                editable={!submitting}
-              />
+            <View
+              style={[
+                styles.card,
+                {
+                  backgroundColor: theme.surface,
+                  borderColor: theme.border,
+                  ...theme.shadowStyle,
+                },
+              ]}
+            >
+              <Text style={[styles.cardTitle, { color: theme.text }]}>Entrar no painel</Text>
+              <Text style={[styles.cardSub, { color: theme.text2 }]}>
+                Use sua conta de administrador.
+              </Text>
 
-              <Text style={[styles.label, { marginTop: 14 }]}>Senha</Text>
-              <TextInput
-                value={password}
-                onChangeText={setPassword}
-                placeholder="••••••••"
-                placeholderTextColor={colors.textMuted}
-                secureTextEntry
-                style={styles.input}
-                editable={!submitting}
-                onSubmitEditing={handleLogin}
-                returnKeyType="go"
-              />
+              <Text style={[styles.label, { color: theme.text2 }]}>E-mail</Text>
+              <View style={[styles.inputWrap, { borderColor: theme.border, backgroundColor: theme.surface2 }]}>
+                <Ionicons name="mail-outline" size={18} color={theme.text3} />
+                <TextInput
+                  value={email}
+                  onChangeText={setEmail}
+                  placeholder="seu@email.com"
+                  placeholderTextColor={theme.text3}
+                  autoCapitalize="none"
+                  autoCorrect={false}
+                  keyboardType="email-address"
+                  inputMode="email"
+                  style={[styles.input, { color: theme.text }]}
+                  editable={!submitting}
+                />
+              </View>
 
-              {error && <Text style={styles.error}>⚠️ {error}</Text>}
+              <Text style={[styles.label, { color: theme.text2, marginTop: 14 }]}>Senha</Text>
+              <View style={[styles.inputWrap, { borderColor: theme.border, backgroundColor: theme.surface2 }]}>
+                <Ionicons name="key-outline" size={18} color={theme.text3} />
+                <TextInput
+                  value={password}
+                  onChangeText={setPassword}
+                  placeholder="••••••••"
+                  placeholderTextColor={theme.text3}
+                  secureTextEntry
+                  style={[styles.input, { color: theme.text }]}
+                  editable={!submitting}
+                  onSubmitEditing={handleLogin}
+                  returnKeyType="go"
+                />
+              </View>
+
+              {error ? (
+                <View style={[styles.errorBox, { backgroundColor: theme.redBg }]}>
+                  <Ionicons name="alert-circle-outline" size={17} color={theme.red} />
+                  <Text style={[styles.errorText, { color: theme.red }]}>{error}</Text>
+                </View>
+              ) : null}
 
               <Pressable
                 onPress={handleLogin}
                 disabled={submitting}
                 style={({ pressed }) => [
                   styles.primaryBtn,
+                  { backgroundColor: theme.accent },
                   (pressed || submitting) && styles.pressed,
                 ]}
               >
                 {submitting ? (
-                  <ActivityIndicator color={colors.white} />
+                  <ActivityIndicator color={theme.onAccent} />
                 ) : (
-                  <Text style={styles.primaryBtnText}>Entrar</Text>
+                  <>
+                    <Text style={[styles.primaryBtnText, { color: theme.onAccent }]}>Entrar</Text>
+                    <Ionicons name="arrow-forward" size={18} color={theme.onAccent} />
+                  </>
                 )}
               </Pressable>
             </View>
           )}
 
-          <Text style={styles.footer}>
+          <Text style={[styles.footer, { color: theme.text3 }]}>
             Acesso exclusivo para administradores do clube.
           </Text>
-        </View>
+        </ScrollView>
       </KeyboardAvoidingView>
     </SafeAreaView>
   );
 }
 
-/** Mensagens do Supabase em pt-BR para os erros mais comuns. */
 function traduzErro(msg: string): string {
   const m = msg.toLowerCase();
   if (m.includes("invalid login credentials")) return "E-mail ou senha incorretos.";
@@ -142,83 +202,159 @@ function traduzErro(msg: string): string {
 }
 
 const styles = StyleSheet.create({
-  safe: { flex: 1, backgroundColor: colors.sky },
+  safe: { flex: 1 },
   flex: { flex: 1 },
-  container: {
-    flex: 1,
-    paddingHorizontal: 24,
+  scrollContent: {
+    flexGrow: 1,
     justifyContent: "center",
-    backgroundColor: colors.sky,
+    paddingHorizontal: 22,
+    paddingVertical: 28,
   },
-  logoWrap: { alignItems: "center", marginBottom: 28 },
-  logoCircle: {
-    width: 72,
-    height: 72,
-    borderRadius: 36,
-    backgroundColor: colors.cyan,
+  brandBlock: {
+    alignItems: "center",
+    marginBottom: 22,
+  },
+  logoFrame: {
+    width: 148,
+    height: 148,
+    borderRadius: 22,
+    borderWidth: 1,
     alignItems: "center",
     justifyContent: "center",
-    marginBottom: 12,
+    padding: 12,
+    marginBottom: 16,
   },
-  brand: { fontSize: 26, fontWeight: "900", color: colors.white },
-  subtitle: { fontSize: 13, color: "#e0f2fe", marginTop: 2, fontWeight: "600" },
+  logo: {
+    width: "100%",
+    height: "100%",
+  },
+  kicker: {
+    minHeight: 30,
+    borderRadius: 999,
+    paddingHorizontal: 11,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+    marginBottom: 10,
+  },
+  kickerText: {
+    fontFamily: fonts.bold,
+    fontSize: 11.5,
+  },
+  title: {
+    fontFamily: fonts.extrabold,
+    fontSize: 27,
+    letterSpacing: -0.3,
+  },
+  subtitle: {
+    fontFamily: fonts.medium,
+    fontSize: 13,
+    lineHeight: 19,
+    textAlign: "center",
+    marginTop: 5,
+  },
   card: {
-    backgroundColor: colors.card,
-    borderRadius: 24,
-    padding: 22,
-    shadowColor: "#000",
-    shadowOpacity: 0.15,
-    shadowRadius: 16,
-    shadowOffset: { width: 0, height: 8 },
-    elevation: 6,
+    borderRadius: 18,
+    borderWidth: 1,
+    padding: 18,
   },
-  label: { fontSize: 13, fontWeight: "700", color: colors.text, marginBottom: 6 },
+  cardTitle: {
+    fontFamily: fonts.extrabold,
+    fontSize: 18,
+    letterSpacing: -0.2,
+  },
+  cardSub: {
+    fontFamily: fonts.medium,
+    fontSize: 12.5,
+    marginTop: 4,
+    marginBottom: 18,
+  },
+  label: {
+    fontFamily: fonts.bold,
+    fontSize: 12,
+    marginBottom: 7,
+  },
+  inputWrap: {
+    minHeight: 48,
+    borderWidth: 1,
+    borderRadius: 12,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 9,
+    paddingHorizontal: 13,
+  },
   input: {
-    borderWidth: 1,
-    borderColor: colors.border,
-    borderRadius: 14,
-    paddingHorizontal: 14,
+    flex: 1,
+    fontFamily: fonts.semibold,
+    fontSize: 14,
     paddingVertical: 12,
-    fontSize: 16,
-    color: colors.text,
-    backgroundColor: "#f8fafc",
   },
-  error: { color: colors.red, fontSize: 13, marginTop: 12, fontWeight: "600" },
+  errorBox: {
+    borderRadius: 12,
+    padding: 11,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+    marginTop: 14,
+  },
+  errorText: {
+    flex: 1,
+    fontFamily: fonts.semibold,
+    fontSize: 12.5,
+  },
   primaryBtn: {
-    backgroundColor: colors.amber,
-    borderRadius: 999,
-    paddingVertical: 14,
+    minHeight: 50,
+    borderRadius: 12,
+    flexDirection: "row",
     alignItems: "center",
-    marginTop: 20,
-  },
-  primaryBtnText: { color: colors.white, fontWeight: "800", fontSize: 16 },
-  secondaryBtn: {
-    borderWidth: 1,
-    borderColor: colors.border,
-    borderRadius: 999,
-    paddingVertical: 13,
-    alignItems: "center",
+    justifyContent: "center",
+    gap: 8,
     marginTop: 18,
   },
-  secondaryBtnText: { color: colors.text, fontWeight: "700", fontSize: 15 },
+  primaryBtnText: {
+    fontFamily: fonts.extrabold,
+    fontSize: 15,
+  },
+  secondaryBtn: {
+    minHeight: 48,
+    borderWidth: 1,
+    borderRadius: 12,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 8,
+    marginTop: 18,
+  },
+  secondaryBtnText: {
+    fontFamily: fonts.bold,
+    fontSize: 14,
+  },
+  deniedIcon: {
+    width: 54,
+    height: 54,
+    borderRadius: 16,
+    alignItems: "center",
+    justifyContent: "center",
+    alignSelf: "center",
+    marginBottom: 12,
+  },
   deniedTitle: {
+    fontFamily: fonts.extrabold,
     fontSize: 18,
-    fontWeight: "800",
-    color: colors.text,
     textAlign: "center",
   },
   deniedText: {
-    fontSize: 14,
-    color: colors.textMuted,
+    fontFamily: fonts.medium,
+    fontSize: 13,
     textAlign: "center",
-    marginTop: 8,
     lineHeight: 20,
+    marginTop: 8,
   },
-  pressed: { opacity: 0.7 },
+  pressed: { opacity: 0.72 },
   footer: {
+    fontFamily: fonts.medium,
     textAlign: "center",
-    color: "#e0f2fe",
-    fontSize: 12,
-    marginTop: 24,
+    fontSize: 11.5,
+    marginTop: 18,
   },
 });

@@ -1,7 +1,7 @@
 import { Pressable, Text, StyleSheet } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { useAuth } from "@/lib/auth";
-import { colors } from "@/lib/theme";
+import { colors, fonts } from "@/lib/theme";
 
 export default function LogoutButton() {
   const { signOut } = useAuth();
@@ -25,5 +25,5 @@ const styles = StyleSheet.create({
     paddingHorizontal: 12,
   },
   pressed: { opacity: 0.5 },
-  label: { color: colors.textMuted, fontWeight: "600", fontSize: 14 },
+  label: { color: colors.textMuted, fontFamily: fonts.semibold, fontSize: 14 },
 });
