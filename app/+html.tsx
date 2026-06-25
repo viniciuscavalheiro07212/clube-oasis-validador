@@ -20,7 +20,7 @@ export default function Html({ children }: PropsWithChildren) {
         <meta name="description" content="Validador administrativo de ingressos do Clube Oasis." />
         <link rel="manifest" href="/manifest.json" />
         <link rel="icon" href="/favicon.png" />
-        <link rel="apple-touch-icon" href="/icon-192.png" />
+        <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
         <ScrollViewStyleReset />
       </head>
       <body>{children}</body>
