@@ -14,8 +14,24 @@ import { createClient } from "@supabase/supabase-js";
  * Diferença vs. web: a sessão é persistida em AsyncStorage (não localStorage)
  * e detectSessionInUrl fica desligado (não há redirect de URL no app nativo).
  */
-const supabaseUrl = process.env.EXPO_PUBLIC_SUPABASE_URL!;
-const supabaseAnonKey = process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY!;
+const FALLBACK_SUPABASE_URL = "https://jczgcfibllslffaawjos.supabase.co";
+const FALLBACK_SUPABASE_ANON_KEY = "sb_publishable_oN_OjEEDdOQ13En1DMb1Mw_z7awKfpe";
+
+function resolveSupabaseUrl(value?: string) {
+  const url = value?.trim();
+
+  if (!url || url.includes("aBcDe.supabase.co")) {
+    return FALLBACK_SUPABASE_URL;
+  }
+
+  // Vercel env vars were accidentally saved once with `.supabase.com`.
+  // Supabase project URLs use `.supabase.co`.
+  return url.replace(".supabase.com", ".supabase.co");
+}
+
+const supabaseUrl = resolveSupabaseUrl(process.env.EXPO_PUBLIC_SUPABASE_URL);
+const supabaseAnonKey =
+  process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY?.trim() || FALLBACK_SUPABASE_ANON_KEY;
 
 const noopStorage = {
   getItem: async () => null,
