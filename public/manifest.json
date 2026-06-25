@@ -1,7 +1,8 @@
 {
   "name": "Clube Oasis Validador",
-  "short_name": "Oasis",
+  "short_name": "Validador",
   "description": "Validador administrativo de ingressos do Clube Oasis.",
+  "id": "/",
   "start_url": "/",
   "scope": "/",
   "display": "standalone",
