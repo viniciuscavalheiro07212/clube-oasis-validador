@@ -5,6 +5,7 @@ import {
   useState,
   type ReactNode,
 } from "react";
+import { Platform } from "react-native";
 import type { Session, User } from "@supabase/supabase-js";
 import { supabase } from "./supabase";
 
@@ -22,6 +23,7 @@ interface AuthState {
   isAdmin: boolean;
   loading: boolean;
   signIn: (email: string, password: string) => Promise<{ error: string | null }>;
+  signInWithGoogle: () => Promise<{ error: string | null }>;
   signOut: () => Promise<void>;
 }
 
@@ -83,6 +85,23 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     return { error: error?.message ?? null };
   }
 
+  async function signInWithGoogle() {
+    // Fluxo OAuth via redirect — só no web/PWA. No nativo exigiria
+    // expo-auth-session/WebBrowser + deep link (fora do escopo atual).
+    if (Platform.OS !== "web") {
+      return { error: "Login com Google está disponível apenas na versão web/PWA." };
+    }
+    const redirectTo =
+      typeof window !== "undefined" ? window.location.origin : undefined;
+    const { error } = await supabase.auth.signInWithOAuth({
+      provider: "google",
+      options: { redirectTo },
+    });
+    // Em caso de sucesso o navegador é redirecionado ao Google; o retorno é
+    // tratado por detectSessionInUrl + onAuthStateChange.
+    return { error: error?.message ?? null };
+  }
+
   async function signOut() {
     await supabase.auth.signOut();
   }
@@ -95,6 +114,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         isAdmin,
         loading,
         signIn,
+        signInWithGoogle,
         signOut,
       }}
     >

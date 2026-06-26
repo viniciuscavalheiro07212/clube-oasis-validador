@@ -49,7 +49,9 @@ export const supabase = createClient(supabaseUrl, supabaseAnonKey, {
     storage: authStorage,
     persistSession: true,
     autoRefreshToken: true,
-    detectSessionInUrl: false,
+    // No web (PWA) o login Google volta do provedor com a sessão na URL —
+    // o cliente precisa detectá-la. No nativo não há redirect de URL.
+    detectSessionInUrl: Platform.OS === "web",
   },
 });
 

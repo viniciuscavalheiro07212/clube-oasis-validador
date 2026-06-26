@@ -19,11 +19,12 @@ import { fonts, useTheme } from "@/lib/theme";
 const logo = require("../assets/oasis-logo.png");
 
 export default function LoginScreen() {
-  const { signIn, signOut, session, isAdmin, loading: authLoading } = useAuth();
+  const { signIn, signInWithGoogle, signOut, session, isAdmin, loading: authLoading } = useAuth();
   const { theme } = useTheme();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [submitting, setSubmitting] = useState(false);
+  const [googleSubmitting, setGoogleSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   const loggedButNotAdmin = !authLoading && !!session && !isAdmin;
@@ -38,6 +39,17 @@ export default function LoginScreen() {
     const { error } = await signIn(email, password);
     setSubmitting(false);
     if (error) setError(traduzErro(error));
+  }
+
+  async function handleGoogle() {
+    setError(null);
+    setGoogleSubmitting(true);
+    const { error } = await signInWithGoogle();
+    // Sucesso redireciona pro Google; só voltamos aqui se houve erro.
+    if (error) {
+      setGoogleSubmitting(false);
+      setError(traduzErro(error));
+    }
   }
 
   return (
@@ -181,6 +193,37 @@ export default function LoginScreen() {
                   </>
                 )}
               </Pressable>
+
+              {Platform.OS === "web" && (
+                <>
+                  <View style={styles.divider}>
+                    <View style={[styles.dividerLine, { backgroundColor: theme.border }]} />
+                    <Text style={[styles.dividerText, { color: theme.text3 }]}>ou</Text>
+                    <View style={[styles.dividerLine, { backgroundColor: theme.border }]} />
+                  </View>
+
+                  <Pressable
+                    onPress={handleGoogle}
+                    disabled={googleSubmitting}
+                    style={({ pressed }) => [
+                      styles.googleBtn,
+                      { borderColor: theme.border, backgroundColor: theme.surface2 },
+                      (pressed || googleSubmitting) && styles.pressed,
+                    ]}
+                  >
+                    {googleSubmitting ? (
+                      <ActivityIndicator color={theme.text} />
+                    ) : (
+                      <>
+                        <Ionicons name="logo-google" size={18} color={theme.text} />
+                        <Text style={[styles.googleBtnText, { color: theme.text }]}>
+                          Entrar com Google
+                        </Text>
+                      </>
+                    )}
+                  </Pressable>
+                </>
+              )}
             </View>
           )}
 
@@ -314,6 +357,29 @@ const styles = StyleSheet.create({
   primaryBtnText: {
     fontFamily: fonts.extrabold,
     fontSize: 15,
+  },
+  divider: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 10,
+    marginTop: 16,
+    marginBottom: 4,
+  },
+  dividerLine: { flex: 1, height: 1 },
+  dividerText: { fontFamily: fonts.semibold, fontSize: 11.5 },
+  googleBtn: {
+    minHeight: 50,
+    borderWidth: 1,
+    borderRadius: 12,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 9,
+    marginTop: 12,
+  },
+  googleBtnText: {
+    fontFamily: fonts.bold,
+    fontSize: 14,
   },
   secondaryBtn: {
     minHeight: 48,
