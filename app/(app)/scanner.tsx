@@ -1,4 +1,4 @@
-import { useState, useCallback } from "react";
+import { useState, useCallback, useEffect } from "react";
 import {
   View,
   Text,
@@ -7,6 +7,7 @@ import {
   ActivityIndicator,
   ScrollView,
   TextInput,
+  Platform,
 } from "react-native";
 import { CameraView, useCameraPermissions } from "expo-camera";
 import { Ionicons } from "@expo/vector-icons";
@@ -52,6 +53,58 @@ export default function Scanner() {
     setMessage("");
     setPhase("scanning");
   }, []);
+
+  // ── Ajuste de foco no PWA (Android Chrome) ──
+  // No web o CameraView vira um <video> do navegador, cujo foco padrão
+  // costuma travar num plano distante e borrar o QR de perto. Aqui pegamos
+  // a faixa de vídeo e pedimos autofoco contínuo + resolução mais alta.
+  // (No nativo/APK isto não roda — o expo-camera já tem autofoco real.)
+  useEffect(() => {
+    if (Platform.OS !== "web") return;
+    if (!permission?.granted || phase !== "scanning") return;
+
+    const doc = (globalThis as { document?: Document }).document;
+    if (!doc) return;
+
+    let cancelled = false;
+    let tries = 0;
+
+    const tune = () => {
+      if (cancelled) return;
+      const video = doc.querySelector("video") as HTMLVideoElement | null;
+      const stream = video?.srcObject as MediaStream | null;
+      const track = stream?.getVideoTracks?.()[0];
+
+      if (!track) {
+        if (tries++ < 25) setTimeout(tune, 300);
+        return;
+      }
+
+      try {
+        const caps = (track.getCapabilities?.() ?? {}) as MediaTrackCapabilities & {
+          focusMode?: string[];
+        };
+        const advanced: MediaTrackConstraintSet[] = [];
+        if (Array.isArray(caps.focusMode) && caps.focusMode.includes("continuous")) {
+          advanced.push({ focusMode: "continuous" } as MediaTrackConstraintSet);
+        }
+        const constraints: MediaTrackConstraints = {};
+        if (caps.width?.max) constraints.width = { ideal: Math.min(1920, caps.width.max) };
+        if (caps.height?.max) constraints.height = { ideal: Math.min(1080, caps.height.max) };
+        if (advanced.length) constraints.advanced = advanced;
+        if (Object.keys(constraints).length) {
+          track.applyConstraints(constraints).catch(() => {});
+        }
+      } catch {
+        /* navegador sem suporte a applyConstraints/capabilities — ignora */
+      }
+    };
+
+    tune();
+    return () => {
+      cancelled = true;
+    };
+  }, [permission?.granted, phase]);
 
   const handleScan = useCallback(
     async ({ data }: { data: string }) => {
