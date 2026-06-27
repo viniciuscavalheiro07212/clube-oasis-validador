@@ -38,8 +38,35 @@ interface LimiteIngressos {
   atualizadoEm?: string;
 }
 
+interface QrCodeBalance {
+  id: string;
+  purchase_id: string;
+  adulto_total: number;
+  meia_total: number;
+  infantil_total: number;
+  adulto_disponivel: number;
+  meia_disponivel: number;
+  infantil_disponivel: number;
+  adulto_validado: number;
+  meia_validado: number;
+  infantil_validado: number;
+  status: "ativo" | "cancelado" | "expirado";
+}
+
 function qty(items: ItemPedido[] | undefined, id: ItemPedido["id"]): number {
   return items?.find((i) => i.id === id)?.quantity ?? 0;
+}
+
+function qrTotal(qrCodes: QrCodeBalance[]): number {
+  return qrCodes.reduce((acc, q) => acc + q.adulto_total + q.meia_total + q.infantil_total, 0);
+}
+
+function qrDisponivel(qrCodes: QrCodeBalance[]): number {
+  return qrCodes.reduce((acc, q) => acc + q.adulto_disponivel + q.meia_disponivel + q.infantil_disponivel, 0);
+}
+
+function qrValidado(qrCodes: QrCodeBalance[]): number {
+  return qrCodes.reduce((acc, q) => acc + q.adulto_validado + q.meia_validado + q.infantil_validado, 0);
 }
 
 function buyerDisplayName(pedido: Pedido): string {
@@ -109,6 +136,7 @@ export default function Dashboard() {
 
   const [tab, setTab] = useState<Tab>("pedidos");
   const [pedidos, setPedidos] = useState<Pedido[]>([]);
+  const [qrCodes, setQrCodes] = useState<QrCodeBalance[]>([]);
   const [cupons, setCupons] = useState<Cupom[]>([]);
   const [limites, setLimites] = useState<LimiteIngressos[]>([]);
   const [limitesAvailable, setLimitesAvailable] = useState(true);
@@ -136,13 +164,17 @@ export default function Dashboard() {
   }, [params.tab]);
 
   const fetchAll = useCallback(async () => {
-    const [pedidosRes, cuponsRes, limitesRes] = await Promise.all([
+    const [pedidosRes, qrCodesRes, cuponsRes, limitesRes] = await Promise.all([
       supabase.from("pedidos").select("*").order("criadoEm", { ascending: false }),
+      supabase
+        .from("qr_codes")
+        .select("id,purchase_id,adulto_total,meia_total,infantil_total,adulto_disponivel,meia_disponivel,infantil_disponivel,adulto_validado,meia_validado,infantil_validado,status"),
       supabase.from("cupons").select("*").order("criadoEm", { ascending: false }),
       supabase.from("limites_ingressos").select("*").order("data", { ascending: true }),
     ]);
 
     if (pedidosRes.error) Alert.alert("Pedidos", pedidosRes.error.message);
+    if (qrCodesRes.error) Alert.alert("QR Codes", qrCodesRes.error.message);
     if (cuponsRes.error) Alert.alert("Cupons", cuponsRes.error.message);
     if (limitesRes.error) {
       if (isMissingTableError(limitesRes.error, "limites_ingressos")) {
@@ -155,6 +187,7 @@ export default function Dashboard() {
     }
 
     setPedidos((pedidosRes.data as Pedido[]) ?? []);
+    setQrCodes(qrCodesRes.error ? [] : ((qrCodesRes.data as QrCodeBalance[]) ?? []));
     setCupons((cuponsRes.data as Cupom[]) ?? []);
     setLimites(limitesRes.error ? [] : ((limitesRes.data as LimiteIngressos[]) ?? []));
   }, []);
@@ -168,6 +201,9 @@ export default function Dashboard() {
     const channel = supabase
       .channel("admin-mobile")
       .on("postgres_changes", { event: "*", schema: "public", table: "pedidos" }, () => {
+        void fetchAll();
+      })
+      .on("postgres_changes", { event: "*", schema: "public", table: "qr_codes" }, () => {
         void fetchAll();
       })
       .on("postgres_changes", { event: "*", schema: "public", table: "cupons" }, () => {
@@ -190,6 +226,14 @@ export default function Dashboard() {
   }, [fetchAll]);
 
   const hoje = useMemo(() => getTodayISO(), []);
+  const qrCodesByPedido = useMemo(() => {
+    return qrCodes.reduce<Record<string, QrCodeBalance[]>>((acc, qrCode) => {
+      if (!acc[qrCode.purchase_id]) acc[qrCode.purchase_id] = [];
+      acc[qrCode.purchase_id].push(qrCode);
+      return acc;
+    }, {});
+  }, [qrCodes]);
+
   const pedidosFiltrados = useMemo(() => {
     const term = busca.trim().toLowerCase();
     return pedidos.filter((pedido) => {
@@ -218,9 +262,12 @@ export default function Dashboard() {
     const todayRevenue = pedidos
       .filter((p) => (p.criadoEm ?? "").startsWith(hoje))
       .reduce((acc, p) => acc + Number(p.total), 0);
-    const validatedCount = pedidos.filter((p) => p.validated_at).length;
+    const validatedCount = qrCodes.reduce(
+      (acc, q) => acc + q.adulto_validado + q.meia_validado + q.infantil_validado,
+      0
+    );
     return { totalTickets, revenue, todayRevenue, validatedCount };
-  }, [pedidos, hoje]);
+  }, [pedidos, qrCodes, hoje]);
 
   const summaryByType = useMemo(() => {
     return (["infantil", "meia", "inteira"] as const).map((tipo) => ({
@@ -395,7 +442,9 @@ export default function Dashboard() {
               {pedidosFiltrados.length === 0 ? (
                 <Text style={[s.emptyText, { color: theme.text2 }]}>Nenhum pedido encontrado.</Text>
               ) : (
-                pedidosFiltrados.map((pedido) => <PedidoRow key={pedido.id} pedido={pedido} />)
+                pedidosFiltrados.map((pedido) => (
+                  <PedidoRow key={pedido.id} pedido={pedido} qrCodes={qrCodesByPedido[pedido.id] ?? []} />
+                ))
               )}
             </>
           )}
@@ -589,15 +638,23 @@ function PedidosHeader(props: {
   );
 }
 
-function PedidoRow({ pedido: p }: { pedido: Pedido }) {
+function PedidoRow({ pedido: p, qrCodes }: { pedido: Pedido; qrCodes: QrCodeBalance[] }) {
   const { theme } = useTheme();
-  const validated = !!p.validated_at;
   const shared = isSharedPedido(p);
   const visit = new Date(p.visitDate + "T12:00:00").toLocaleDateString("pt-BR");
   const holderName = ticketHolderDisplayName(p);
   const buyerName = buyerDisplayName(p);
   const avatarInitials = initials(holderName);
   const holderCpf = p.destinatario_cpf || p.comprador?.cpf || p.comprador?.email || "--";
+  const qrTotalCount = qrTotal(qrCodes) || p.totalQuantity || 0;
+  const availableCount = qrDisponivel(qrCodes);
+  const validatedCount = qrValidado(qrCodes);
+  const hasQrBalance = qrCodes.length > 0;
+  const fullyValidated = hasQrBalance && qrTotalCount > 0 && availableCount === 0;
+  const partiallyValidated = hasQrBalance && validatedCount > 0 && availableCount > 0;
+  const statusLabel = fullyValidated ? "Validado" : partiallyValidated ? "Parcial" : "Pendente";
+  const statusColor = fullyValidated ? theme.green : partiallyValidated ? theme.blue : theme.amber;
+  const statusBg = fullyValidated ? theme.greenBg : partiallyValidated ? theme.blueBg : theme.amberBg;
 
   const comp = [
     qty(p.items, "inteira") > 0 ? `${qty(p.items, "inteira")} Inteira` : null,
@@ -632,6 +689,11 @@ function PedidoRow({ pedido: p }: { pedido: Pedido }) {
           )}
         </View>
         {comp ? <Text style={[s.pedidoComp, { color: theme.text2 }]}>{comp}</Text> : null}
+        {qrCodes.length > 0 ? (
+          <Text style={[s.pedidoCpf, { color: theme.text3 }]}>
+            Saldo: {availableCount}/{qrTotalCount} disponível · {validatedCount} validado
+          </Text>
+        ) : null}
         <Text style={[s.pedidoCpf, { color: theme.text3 }]}>
           {holderCpf}
         </Text>
@@ -644,10 +706,8 @@ function PedidoRow({ pedido: p }: { pedido: Pedido }) {
       {/* Valor + status */}
       <View style={s.pedidoRight}>
         <Text style={[s.pedidoTotal, { color: theme.text }]}>{formatBRL(Number(p.total))}</Text>
-        <View style={[s.statusPill, { backgroundColor: validated ? theme.greenBg : theme.amberBg }]}>
-          <Text style={[s.statusText, { color: validated ? theme.green : theme.amber }]}>
-            {validated ? "Validado" : "Pendente"}
-          </Text>
+        <View style={[s.statusPill, { backgroundColor: statusBg }]}>
+          <Text style={[s.statusText, { color: statusColor }]}>{statusLabel}</Text>
         </View>
       </View>
     </View>

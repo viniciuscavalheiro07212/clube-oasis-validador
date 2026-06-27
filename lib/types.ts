@@ -39,9 +39,34 @@ export interface Pedido {
   destinatario_cpf?: string | null;
 }
 
+export interface QrCodeAccess {
+  id: string;
+  purchase_id: string;
+  parent_qr_code_id: string | null;
+  tipo: "pai" | "filho";
+  nome_vinculado: string | null;
+  cpf_vinculado: string | null;
+  destinatario_nome: string | null;
+  destinatario_cpf: string | null;
+  visit_date: string;
+  adulto_total: number;
+  meia_total: number;
+  infantil_total: number;
+  adulto_disponivel: number;
+  meia_disponivel: number;
+  infantil_disponivel: number;
+  adulto_validado: number;
+  meia_validado: number;
+  infantil_validado: number;
+  status: "ativo" | "cancelado" | "expirado";
+  qr_code_token: string;
+  criado_em: string;
+}
+
 /** Resultado da leitura de um QR Code na portaria. */
 export interface ScanResult {
   pedido: Pedido;
+  qrCode: QrCodeAccess;
   buyerName: string;
   ticketHolderName: string;
   ticketHolderCpf: string | null;
