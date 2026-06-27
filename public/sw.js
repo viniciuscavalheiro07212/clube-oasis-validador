@@ -1,7 +1,7 @@
 // Bump esta versão a cada deploy que precise furar o cache do PWA.
 // O handler de 'activate' apaga os caches antigos, e skipWaiting +
 // clients.claim fazem a nova versão assumir sem esperar.
-const CACHE_NAME = "clube-oasis-pwa-v7";
+const CACHE_NAME = "clube-oasis-pwa-v8";
 const APP_SHELL = ["/", "/manifest.json", "/favicon.png", "/icon-192.png", "/icon-512.png"];
 
 self.addEventListener("install", (event) => {
