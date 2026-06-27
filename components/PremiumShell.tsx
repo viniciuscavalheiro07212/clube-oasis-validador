@@ -1,5 +1,5 @@
 import React from 'react';
-import { View, Text, Pressable, StyleSheet } from 'react-native';
+import { Platform, View, Text, Pressable, StyleSheet } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { StatusBar } from 'expo-status-bar';
@@ -9,9 +9,9 @@ import { fonts, useTheme } from '@/lib/theme';
 export type AppTab = 'validar' | 'pedidos' | 'faturamento' | 'cupons' | 'limites';
 
 const TAB_ITEMS: { id: AppTab; label: string; icon: keyof typeof Ionicons.glyphMap }[] = [
-  { id: 'validar',      label: 'Validar',     icon: 'qr-code-outline'        },
   { id: 'pedidos',      label: 'Pedidos',     icon: 'ticket-outline'         },
   { id: 'faturamento',  label: 'Faturamento', icon: 'bar-chart-outline'      },
+  { id: 'validar',      label: 'Validador',   icon: 'qr-code-outline'        },
   { id: 'cupons',       label: 'Cupons',      icon: 'pricetag-outline'       },
   { id: 'limites',      label: 'Limites',     icon: 'calendar-outline'       },
 ];
@@ -26,9 +26,20 @@ export function PremiumShell({ activeTab, onTabChange, children }: Props) {
   const { theme, isDark, toggleTheme } = useTheme();
   const { signOut } = useAuth();
   const insets = useSafeAreaInsets();
+  const webRootStyle =
+    Platform.OS === 'web'
+      ? ({
+          alignSelf: 'center',
+          height: '100dvh',
+          maxHeight: '100dvh',
+          maxWidth: 560,
+          overflow: 'hidden',
+          width: '100%',
+        } as const)
+      : null;
 
   return (
-    <View style={[s.root, { backgroundColor: theme.bg }]}>
+    <View style={[s.root, webRootStyle, { backgroundColor: theme.bg }]}>
       <StatusBar style={isDark ? 'light' : 'dark'} />
 
       {/* Header (inclui safe-area topo) */}
@@ -74,17 +85,44 @@ export function PremiumShell({ activeTab, onTabChange, children }: Props) {
       >
         {TAB_ITEMS.map((item) => {
           const active = activeTab === item.id;
+          const featured = item.id === 'validar';
           return (
-            <Pressable key={item.id} onPress={() => onTabChange(item.id)} style={s.tabItem}>
-              {active && (
+            <Pressable
+              key={item.id}
+              onPress={() => onTabChange(item.id)}
+              style={[s.tabItem, featured && s.featuredTabItem]}
+            >
+              {active && !featured && (
                 <View style={[s.tabIndicator, { backgroundColor: theme.accent }]} />
               )}
-              <Ionicons
-                name={item.icon}
-                size={22}
-                color={active ? theme.accent : theme.text3}
-              />
-              <Text style={[s.tabLabel, { color: active ? theme.accent : theme.text3 }]}>
+              {featured ? (
+                <View
+                  style={[
+                    s.scannerButton,
+                    {
+                      backgroundColor: active ? theme.accent : theme.surface2,
+                      borderColor: active ? theme.accent : theme.border,
+                      ...theme.shadowStyle,
+                    },
+                  ]}
+                >
+                  <Ionicons
+                    name={item.icon}
+                    size={30}
+                    color={active ? theme.onAccent : theme.accent}
+                  />
+                </View>
+              ) : (
+                <Ionicons
+                  name={item.icon}
+                  size={22}
+                  color={active ? theme.accent : theme.text3}
+                />
+              )}
+              <Text
+                numberOfLines={1}
+                style={[s.tabLabel, { color: active ? theme.accent : theme.text3 }]}
+              >
                 {item.label}
               </Text>
             </Pressable>
@@ -96,11 +134,12 @@ export function PremiumShell({ activeTab, onTabChange, children }: Props) {
 }
 
 const s = StyleSheet.create({
-  root: { flex: 1 },
+  root: { flex: 1, minHeight: 0, minWidth: 0, width: '100%', overflow: 'hidden' },
   header: {
     borderBottomWidth: 1,
     flexDirection: 'row',
     alignItems: 'center',
+    flexShrink: 0,
     gap: 10,
     paddingHorizontal: 16,
     paddingBottom: 13,
@@ -120,7 +159,7 @@ const s = StyleSheet.create({
     fontFamily: fonts.bold,
     letterSpacing: -0.1,
   },
-  headerRight: { flexDirection: 'row', alignItems: 'center', gap: 5 },
+  headerRight: { flexDirection: 'row', alignItems: 'center', flexShrink: 0, gap: 5 },
   themeBtn: {
     width: 34,
     height: 34,
@@ -138,11 +177,13 @@ const s = StyleSheet.create({
     minHeight: 44,
   },
   logoutText: { fontSize: 12.5, fontFamily: fonts.semibold },
-  content: { flex: 1 },
+  content: { flex: 1, minHeight: 0, overflow: 'hidden' },
   tabBar: {
     flexDirection: 'row',
+    flexShrink: 0,
     borderTopWidth: 1,
-    paddingTop: 6,
+    paddingTop: 7,
+    overflow: 'visible',
   },
   tabItem: {
     flex: 1,
@@ -152,6 +193,20 @@ const s = StyleSheet.create({
     gap: 4,
     position: 'relative',
     minHeight: 44,
+  },
+  featuredTabItem: {
+    marginTop: -26,
+    paddingTop: 0,
+    gap: 5,
+    minHeight: 70,
+  },
+  scannerButton: {
+    width: 64,
+    height: 64,
+    borderRadius: 32,
+    borderWidth: 4,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   tabIndicator: {
     position: 'absolute',

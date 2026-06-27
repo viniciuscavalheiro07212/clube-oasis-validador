@@ -62,6 +62,10 @@ export default function LoginScreen() {
           keyboardShouldPersistTaps="handled"
           contentContainerStyle={styles.scrollContent}
           style={{ backgroundColor: theme.bg }}
+          bounces={false}
+          alwaysBounceVertical={false}
+          overScrollMode="never"
+          showsVerticalScrollIndicator={false}
         >
           <View style={styles.brandBlock}>
             <View

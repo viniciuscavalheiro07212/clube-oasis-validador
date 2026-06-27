@@ -422,6 +422,11 @@ export default function Dashboard() {
         <ScrollView
           style={{ flex: 1, backgroundColor: theme.bg }}
           contentContainerStyle={s.scrollContent}
+          keyboardShouldPersistTaps="handled"
+          bounces={false}
+          alwaysBounceVertical={false}
+          overScrollMode="never"
+          showsVerticalScrollIndicator={false}
           refreshControl={
             <RefreshControl
               refreshing={refreshing}

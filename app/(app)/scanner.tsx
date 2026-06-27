@@ -530,9 +530,12 @@ export default function Scanner() {
   }
 
   function handleTabChange(tab: string) {
-    if (tab !== "validar") {
-      router.replace({ pathname: "/(app)/dashboard", params: { tab } });
+    if (tab === "validar") {
+      reset();
+      return;
     }
+
+    router.replace({ pathname: "/(app)/dashboard", params: { tab } });
   }
 
   function handleManualValidation() {
@@ -622,6 +625,10 @@ export default function Scanner() {
         <ScrollView
           style={{ flex: 1, backgroundColor: theme.bg }}
           contentContainerStyle={s.resultContent}
+          bounces={false}
+          alwaysBounceVertical={false}
+          overScrollMode="never"
+          showsVerticalScrollIndicator={false}
         >
           {/* Banner de status */}
           <View style={[s.statusBanner, { backgroundColor: bannerBg, borderColor: bannerColor + '40' }]}>
@@ -741,7 +748,15 @@ export default function Scanner() {
   // ── Câmera ativa ──
   return (
     <PremiumShell activeTab="validar" onTabChange={handleTabChange as any}>
-      <View style={s.cameraContent}>
+      <ScrollView
+        style={{ flex: 1, backgroundColor: theme.bg }}
+        contentContainerStyle={s.cameraContent}
+        keyboardShouldPersistTaps="handled"
+        bounces={false}
+        alwaysBounceVertical={false}
+        overScrollMode="never"
+        showsVerticalScrollIndicator={false}
+      >
         {/* Título + subtítulo */}
         <Text style={[s.scanTitle, { color: theme.text }]}>Validar ingresso</Text>
         <Text style={[s.scanSubtitle, { color: theme.text2 }]}>
@@ -850,7 +865,7 @@ export default function Scanner() {
         >
           <Text style={[s.validateBtnFullText, { color: theme.onAccent }]}>Validar código</Text>
         </Pressable>
-      </View>
+      </ScrollView>
     </PremiumShell>
   );
 }
@@ -950,7 +965,7 @@ const s = StyleSheet.create({
 
   // Camera / scanner
   cameraContent: {
-    flex: 1,
+    flexGrow: 1,
     alignItems: 'center',
     paddingHorizontal: 14,
     paddingTop: 20,
