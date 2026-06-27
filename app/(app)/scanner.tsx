@@ -35,6 +35,8 @@ type ZxingReader = {
     source: HTMLVideoElement,
     callback: (result: ZxingResult | undefined, error: unknown, controls: WebScannerControls) => void
   ) => Promise<WebScannerControls>;
+  decodeFromImageElement: (source: HTMLImageElement) => Promise<ZxingResult>;
+  decodeFromCanvas: (source: HTMLCanvasElement) => ZxingResult;
 };
 type ZxingBrowserModule = {
   BrowserQRCodeReader: new (
@@ -426,11 +428,12 @@ export default function Scanner() {
       const file = input.files?.[0];
       if (!file) return;
 
+      setMessage("Lendo foto do QR Code...");
       const objectUrl = URL.createObjectURL(file);
       const image = new Image();
-      image.onload = () => {
+      image.onload = async () => {
         try {
-          const rawValue = readQrFromImage(image, doc);
+          const rawValue = (await readQrFromImageWithZxing(image, doc)) || (await readQrFromImage(image, doc));
           if (rawValue) {
             void handleScan({ data: rawValue });
             return;
@@ -452,7 +455,44 @@ export default function Scanner() {
     input.click();
   }
 
-  function readQrFromImage(image: HTMLImageElement, doc: Document): string | null {
+  async function readQrFromImageWithZxing(image: HTMLImageElement, doc: Document): Promise<string | null> {
+    try {
+      const { BrowserQRCodeReader } = (await import("@zxing/browser")) as unknown as ZxingBrowserModule;
+      const reader = new BrowserQRCodeReader(undefined, {
+        delayBetweenScanAttempts: 80,
+        delayBetweenScanSuccess: 250,
+        tryPlayVideoTimeout: 1000,
+      });
+
+      const directResult = await reader.decodeFromImageElement(image);
+      const directText = directResult?.getText?.();
+      if (directText) return directText;
+    } catch {
+      // Tenta via canvas abaixo.
+    }
+
+    try {
+      const { BrowserQRCodeReader } = (await import("@zxing/browser")) as unknown as ZxingBrowserModule;
+      const reader = new BrowserQRCodeReader();
+      const canvas = doc.createElement("canvas");
+      const context = canvas.getContext("2d");
+      if (!context || !image.naturalWidth || !image.naturalHeight) return null;
+
+      const maxSide = 1600;
+      const scale = Math.min(1, maxSide / Math.max(image.naturalWidth, image.naturalHeight));
+      canvas.width = Math.max(1, Math.round(image.naturalWidth * scale));
+      canvas.height = Math.max(1, Math.round(image.naturalHeight * scale));
+      context.imageSmoothingEnabled = false;
+      context.drawImage(image, 0, 0, canvas.width, canvas.height);
+
+      const canvasResult = reader.decodeFromCanvas(canvas);
+      return canvasResult?.getText?.() ?? null;
+    } catch {
+      return null;
+    }
+  }
+
+  async function readQrFromImage(image: HTMLImageElement, doc: Document): Promise<string | null> {
     const canvas = doc.createElement("canvas");
     const context = canvas.getContext("2d", { willReadFrequently: true });
     const width = image.naturalWidth;
@@ -460,7 +500,7 @@ export default function Scanner() {
     if (!context || !width || !height) return null;
 
     const candidates = [{ x: 0, y: 0, w: width, h: height }];
-    for (const ratio of [0.92, 0.78, 0.64, 0.5]) {
+    for (const ratio of [0.96, 0.88, 0.78, 0.66, 0.54, 0.42]) {
       const size = Math.floor(Math.min(width, height) * ratio);
       candidates.push({
         x: Math.max(0, Math.floor((width - size) / 2)),
@@ -471,18 +511,19 @@ export default function Scanner() {
     }
 
     for (const candidate of candidates) {
-      const maxSide = 1400;
-      const scale = Math.min(1, maxSide / Math.max(candidate.w, candidate.h));
-      const targetWidth = Math.max(1, Math.round(candidate.w * scale));
-      const targetHeight = Math.max(1, Math.round(candidate.h * scale));
+      for (const maxSide of [1800, 1200, 800]) {
+        const scale = Math.min(1, maxSide / Math.max(candidate.w, candidate.h));
+        const targetWidth = Math.max(1, Math.round(candidate.w * scale));
+        const targetHeight = Math.max(1, Math.round(candidate.h * scale));
 
-      canvas.width = targetWidth;
-      canvas.height = targetHeight;
-      context.imageSmoothingEnabled = false;
-      context.drawImage(image, candidate.x, candidate.y, candidate.w, candidate.h, 0, 0, targetWidth, targetHeight);
-      const imageData = context.getImageData(0, 0, targetWidth, targetHeight);
-      const rawValue = jsQR(imageData.data, targetWidth, targetHeight, { inversionAttempts: "attemptBoth" })?.data;
-      if (rawValue) return rawValue;
+        canvas.width = targetWidth;
+        canvas.height = targetHeight;
+        context.imageSmoothingEnabled = false;
+        context.drawImage(image, candidate.x, candidate.y, candidate.w, candidate.h, 0, 0, targetWidth, targetHeight);
+        const imageData = context.getImageData(0, 0, targetWidth, targetHeight);
+        const rawValue = jsQR(imageData.data, targetWidth, targetHeight, { inversionAttempts: "attemptBoth" })?.data;
+        if (rawValue) return rawValue;
+      }
     }
 
     return null;
