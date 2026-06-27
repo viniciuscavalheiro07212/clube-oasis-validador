@@ -33,11 +33,18 @@ export interface Pedido {
   // ── Validação (migration 20260622000001_pedidos_validation.sql) ──
   validated_at: string | null; // null = ainda não validado
   validated_by: string | null; // auth.users.id de quem deu a baixa
+  compartilhado_em?: string | null;
+  compartilhado_por?: string | null;
+  destinatario_nome?: string | null;
+  destinatario_cpf?: string | null;
 }
 
 /** Resultado da leitura de um QR Code na portaria. */
 export interface ScanResult {
   pedido: Pedido;
   buyerName: string;
+  ticketHolderName: string;
+  ticketHolderCpf: string | null;
+  isShared: boolean;
   totalTickets: number;
 }

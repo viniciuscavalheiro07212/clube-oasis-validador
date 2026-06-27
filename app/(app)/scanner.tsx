@@ -1,4 +1,4 @@
-import { useState, useCallback, useEffect } from "react";
+import { useState, useCallback, useEffect, useRef } from "react";
 import {
   View,
   Text,
@@ -8,9 +8,11 @@ import {
   ScrollView,
   TextInput,
   Platform,
+  useWindowDimensions,
 } from "react-native";
 import { CameraView, useCameraPermissions } from "expo-camera";
 import { Ionicons } from "@expo/vector-icons";
+import jsQR from "jsqr";
 import { useRouter } from "expo-router";
 import { useAuth } from "@/lib/auth";
 import { supabase } from "@/lib/supabase";
@@ -20,12 +22,20 @@ import type { ItemPedido, Pedido, ScanResult } from "@/lib/types";
 
 type Phase = "scanning" | "loading" | "result" | "error";
 type ValidationNotice = "none" | "validated" | "already";
+type BarcodePayload = { data?: string; nativeEvent?: { data?: string } };
+type WebBarcodeDetector = {
+  detect: (source: HTMLVideoElement) => Promise<{ rawValue?: string; data?: string }[]>;
+};
+type WebBarcodeDetectorConstructor = new (options?: { formats?: string[] }) => WebBarcodeDetector;
 
 const UUID_RE =
   /[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}/i;
 
 function extractPedidoId(raw: string): string | null {
-  const match = raw.trim().match(UUID_RE);
+  const value = raw.trim();
+  if (!value) return null;
+
+  const match = value.match(UUID_RE);
   return match ? match[0] : null;
 }
 
@@ -33,24 +43,46 @@ function qty(items: ItemPedido[] | undefined, id: ItemPedido["id"]): number {
   return items?.find((i) => i.id === id)?.quantity ?? 0;
 }
 
+function getBuyerName(pedido: Pedido): string {
+  return (
+    pedido.comprador?.nome?.trim() ||
+    pedido.comprador?.email?.trim() ||
+    "Sem nome cadastrado"
+  );
+}
+
+function getTicketHolderName(pedido: Pedido): string {
+  return pedido.destinatario_nome?.trim() || getBuyerName(pedido);
+}
+
 export default function Scanner() {
   const { user } = useAuth();
   const { theme } = useTheme();
   const router = useRouter();
+  const { width } = useWindowDimensions();
   const [permission, requestPermission] = useCameraPermissions();
 
   const [phase, setPhase] = useState<Phase>("scanning");
+  const [cameraReady, setCameraReady] = useState(false);
   const [result, setResult] = useState<ScanResult | null>(null);
   const [validatorName, setValidatorName] = useState<string | null>(null);
   const [validationNotice, setValidationNotice] = useState<ValidationNotice>("none");
   const [message, setMessage] = useState<string>("");
   const [manualCode, setManualCode] = useState("");
+  const scanningRef = useRef(false);
+  const phaseRef = useRef<Phase>("scanning");
+
+  useEffect(() => {
+    phaseRef.current = phase;
+  }, [phase]);
 
   const reset = useCallback(() => {
+    scanningRef.current = false;
     setResult(null);
     setValidatorName(null);
     setValidationNotice("none");
     setMessage("");
+    setCameraReady(false);
     setPhase("scanning");
   }, []);
 
@@ -107,16 +139,18 @@ export default function Scanner() {
   }, [permission?.granted, phase]);
 
   const handleScan = useCallback(
-    async ({ data }: { data: string }) => {
-      setPhase((prev) => {
-        if (prev !== "scanning") return prev;
-        return "loading";
-      });
+    async (payload: BarcodePayload) => {
+      if (phaseRef.current !== "scanning") return;
+      if (scanningRef.current) return;
+      const data = payload.data ?? payload.nativeEvent?.data ?? "";
+      scanningRef.current = true;
+      setPhase("loading");
 
       const pedidoId = extractPedidoId(data);
       if (!pedidoId) {
         setMessage("QR Code inválido — não contém um ingresso reconhecível.");
         setPhase("error");
+        scanningRef.current = false;
         return;
       }
 
@@ -129,15 +163,20 @@ export default function Scanner() {
       if (error) {
         setMessage("Erro ao consultar o ingresso: " + error.message);
         setPhase("error");
+        scanningRef.current = false;
         return;
       }
       if (!pedido) {
         setMessage("Ingresso não encontrado no sistema.");
         setPhase("error");
+        scanningRef.current = false;
         return;
       }
 
-      const buyerName = pedido.comprador?.nome?.trim() || "Sem nome cadastrado";
+      const buyerName = getBuyerName(pedido);
+      const ticketHolderName = getTicketHolderName(pedido);
+      const ticketHolderCpf = pedido.destinatario_cpf?.trim() || pedido.comprador?.cpf || null;
+      const isShared = !!pedido.compartilhado_em && !!pedido.destinatario_nome?.trim();
 
       if (pedido.validated_by) {
         await resolveValidator(pedido.validated_by);
@@ -150,11 +189,105 @@ export default function Scanner() {
         setMessage("");
       }
 
-      setResult({ pedido, buyerName, totalTickets: pedido.totalQuantity });
+      setResult({ pedido, buyerName, ticketHolderName, ticketHolderCpf, isShared, totalTickets: pedido.totalQuantity });
       setPhase("result");
     },
     []
   );
+
+  useEffect(() => {
+    if (Platform.OS !== "web") return;
+    if (!permission?.granted || phase !== "scanning") return;
+
+    const win = globalThis as typeof globalThis & {
+      BarcodeDetector?: WebBarcodeDetectorConstructor;
+      document?: Document;
+    };
+    if (!win.document) return;
+
+    const canvas = win.document.createElement("canvas");
+    const context = canvas.getContext("2d", { willReadFrequently: true });
+    if (!context) return;
+
+    let stopped = false;
+    let timeout: ReturnType<typeof setTimeout> | null = null;
+    const detector = win.BarcodeDetector
+      ? new win.BarcodeDetector({ formats: ["qr_code"] })
+      : null;
+
+    const getCameraVideo = () => {
+      const videos = Array.from(win.document?.querySelectorAll("video") ?? []);
+      return (
+        videos.find((item) => item.readyState >= 2 && item.videoWidth > 0 && item.videoHeight > 0) ??
+        videos[0] ??
+        null
+      );
+    };
+
+    const decodeCanvas = (
+      video: HTMLVideoElement,
+      sourceX: number,
+      sourceY: number,
+      sourceWidth: number,
+      sourceHeight: number
+    ) => {
+      canvas.width = sourceWidth;
+      canvas.height = sourceHeight;
+      context.drawImage(video, sourceX, sourceY, sourceWidth, sourceHeight, 0, 0, sourceWidth, sourceHeight);
+      const image = context.getImageData(0, 0, sourceWidth, sourceHeight);
+      return jsQR(image.data, sourceWidth, sourceHeight, { inversionAttempts: "attemptBoth" })?.data ?? null;
+    };
+
+    const readWithCanvas = (video: HTMLVideoElement) => {
+      const width = video.videoWidth;
+      const height = video.videoHeight;
+      if (!width || !height) return null;
+
+      const fullFrameResult = decodeCanvas(video, 0, 0, width, height);
+      if (fullFrameResult) return fullFrameResult;
+
+      const cropSize = Math.floor(Math.min(width, height) * 0.82);
+      const cropX = Math.floor((width - cropSize) / 2);
+      const cropY = Math.floor((height - cropSize) / 2);
+      return decodeCanvas(video, cropX, cropY, cropSize, cropSize);
+    };
+
+    const readWithBarcodeDetector = async (video: HTMLVideoElement) => {
+      if (!detector) return null;
+      try {
+        const codes = await detector.detect(video);
+        return codes[0]?.rawValue || codes[0]?.data || null;
+      } catch {
+        return null;
+      }
+    };
+
+    const scan = async () => {
+      if (stopped || phaseRef.current !== "scanning" || scanningRef.current) return;
+
+      try {
+        const video = getCameraVideo();
+        if (video?.readyState && video.readyState >= 2) {
+          setCameraReady(true);
+          const rawValue = (await readWithBarcodeDetector(video)) || readWithCanvas(video);
+          if (rawValue) {
+            void handleScan({ data: rawValue });
+            return;
+          }
+        }
+      } catch {
+        // O leitor do Expo continua ativo; este fallback só tenta ajudar no web.
+      }
+
+      timeout = setTimeout(scan, 250);
+    };
+
+    timeout = setTimeout(scan, 250);
+    return () => {
+      stopped = true;
+      if (timeout) clearTimeout(timeout);
+    };
+  }, [handleScan, permission?.granted, phase]);
 
   async function resolveValidator(validatorId: string) {
     const { data } = await supabase
@@ -289,7 +422,11 @@ export default function Scanner() {
 
           {/* Card de informações */}
           <View style={[s.infoCard, { backgroundColor: theme.surface, borderColor: theme.border, ...theme.shadowStyle }]}>
-            <InfoLine label="Comprador" value={result.buyerName} />
+            <InfoLine label={result.isShared ? "Quem entra" : "Comprador"} value={result.ticketHolderName} />
+            {result.ticketHolderCpf ? <InfoLine label="CPF" value={result.ticketHolderCpf} /> : null}
+            {result.isShared ? (
+              <InfoLine label="Comprador original" value={result.buyerName} />
+            ) : null}
             <InfoLine label="Data da visita" value={visit} />
             <InfoLine label="Ingressos" value={`${result.totalTickets} no total`} />
             <View style={s.chips}>
@@ -370,12 +507,28 @@ export default function Scanner() {
         </Text>
 
         {/* Visor */}
-        <View style={[s.viewfinder, { backgroundColor: theme.surface2 }]}>
+        <View
+          style={[
+            s.viewfinder,
+            {
+              width: Math.min(Math.max(width - 48, 260), 360),
+              height: Math.min(Math.max(width - 48, 260), 360),
+              backgroundColor: theme.surface2,
+            },
+          ]}
+        >
           <CameraView
             style={StyleSheet.absoluteFill}
+            active={phase === "scanning"}
             facing="back"
             barcodeScannerSettings={{ barcodeTypes: ["qr"] }}
-            onBarcodeScanned={phase === "scanning" ? handleScan : undefined}
+            onCameraReady={() => setCameraReady(true)}
+            onMountError={(event) => {
+              const cameraMessage = event?.message || "verifique a permissÃ£o da cÃ¢mera.";
+              setMessage("NÃ£o foi possÃ­vel iniciar a cÃ¢mera: " + cameraMessage);
+              setPhase("error");
+            }}
+            onBarcodeScanned={handleScan}
           />
           {/* Cantos em L */}
           <View style={[s.cornerTL, { borderColor: theme.accent }]} />
@@ -383,8 +536,14 @@ export default function Scanner() {
           <View style={[s.cornerBL, { borderColor: theme.accent }]} />
           <View style={[s.cornerBR, { borderColor: theme.accent }]} />
           {/* Linha de varredura */}
-          {phase === "scanning" && (
+          {phase === "scanning" && cameraReady && (
             <View style={[s.scanLine, { backgroundColor: theme.accent }]} />
+          )}
+          {phase === "scanning" && !cameraReady && (
+            <View style={[s.loadOverlay, { backgroundColor: 'rgba(0,0,0,0.35)' }]}>
+              <ActivityIndicator color={theme.accent} size="large" />
+              <Text style={[s.loadText, { color: theme.text }]}>Iniciando camera...</Text>
+            </View>
           )}
           {phase === "loading" && (
             <View style={[s.loadOverlay, { backgroundColor: 'rgba(0,0,0,0.5)' }]}>

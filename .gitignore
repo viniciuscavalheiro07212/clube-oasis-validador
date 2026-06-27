@@ -33,3 +33,6 @@ expo-web.*.log
 
 # Typescript
 *.tsbuildinfo
+
+.vercel
+.env*

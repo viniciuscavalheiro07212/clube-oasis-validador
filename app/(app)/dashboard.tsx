@@ -50,6 +50,14 @@ function buyerDisplayName(pedido: Pedido): string {
   );
 }
 
+function ticketHolderDisplayName(pedido: Pedido): string {
+  return pedido.destinatario_nome?.trim() || buyerDisplayName(pedido);
+}
+
+function isSharedPedido(pedido: Pedido): boolean {
+  return !!pedido.compartilhado_em && !!pedido.destinatario_nome?.trim();
+}
+
 function getTodayISO(): string {
   const now = new Date();
   return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")}`;
@@ -189,7 +197,9 @@ export default function Dashboard() {
       const matchBusca = term
         ? pedido.comprador?.nome?.toLowerCase().includes(term) ||
           pedido.comprador?.cpf?.includes(term) ||
-          pedido.comprador?.email?.toLowerCase().includes(term)
+          pedido.comprador?.email?.toLowerCase().includes(term) ||
+          pedido.destinatario_nome?.toLowerCase().includes(term) ||
+          pedido.destinatario_cpf?.includes(term)
         : true;
       return matchData && matchBusca;
     });
@@ -582,9 +592,12 @@ function PedidosHeader(props: {
 function PedidoRow({ pedido: p }: { pedido: Pedido }) {
   const { theme } = useTheme();
   const validated = !!p.validated_at;
+  const shared = isSharedPedido(p);
   const visit = new Date(p.visitDate + "T12:00:00").toLocaleDateString("pt-BR");
+  const holderName = ticketHolderDisplayName(p);
   const buyerName = buyerDisplayName(p);
-  const avatarInitials = initials(buyerName);
+  const avatarInitials = initials(holderName);
+  const holderCpf = p.destinatario_cpf || p.comprador?.cpf || p.comprador?.email || "--";
 
   const comp = [
     qty(p.items, "inteira") > 0 ? `${qty(p.items, "inteira")} Inteira` : null,
@@ -603,10 +616,15 @@ function PedidoRow({ pedido: p }: { pedido: Pedido }) {
       {/* Info */}
       <View style={s.pedidoInfo}>
         <Text style={[s.pedidoName, { color: theme.text }]} numberOfLines={1}>
-          {buyerName}
+          {holderName}
         </Text>
         <View style={s.pedidoRow2}>
           <Text style={[s.pedidoDate, { color: theme.text2 }]}>{visit}</Text>
+          {shared && (
+            <View style={[s.sharedTag, { backgroundColor: theme.blueBg }]}>
+              <Text style={[s.sharedTagText, { color: theme.blue }]}>Compartilhado</Text>
+            </View>
+          )}
           {p.coupon && (
             <View style={[s.couponTag, { backgroundColor: theme.accentSoft }]}>
               <Text style={[s.couponTagText, { color: theme.accent }]}>{p.coupon}</Text>
@@ -615,8 +633,13 @@ function PedidoRow({ pedido: p }: { pedido: Pedido }) {
         </View>
         {comp ? <Text style={[s.pedidoComp, { color: theme.text2 }]}>{comp}</Text> : null}
         <Text style={[s.pedidoCpf, { color: theme.text3 }]}>
-          {p.comprador?.cpf || p.comprador?.email || "--"}
+          {holderCpf}
         </Text>
+        {shared ? (
+          <Text style={[s.pedidoCpf, { color: theme.text3 }]} numberOfLines={1}>
+            Comprador: {buyerName}
+          </Text>
+        ) : null}
       </View>
       {/* Valor + status */}
       <View style={s.pedidoRight}>
@@ -1142,6 +1165,8 @@ const s = StyleSheet.create({
   pedidoDate: { fontSize: 12.5, fontFamily: fonts.bold },
   couponTag: { paddingHorizontal: 6, paddingVertical: 2, borderRadius: 5 },
   couponTagText: { fontSize: 10, fontFamily: fonts.extrabold, letterSpacing: 0.5 },
+  sharedTag: { paddingHorizontal: 6, paddingVertical: 2, borderRadius: 5 },
+  sharedTagText: { fontSize: 10, fontFamily: fonts.extrabold },
   pedidoComp: { fontSize: 12, marginTop: 3 },
   pedidoCpf: { fontSize: 11.5, marginTop: 2 },
   pedidoRight: { alignItems: 'flex-end', gap: 7, flexShrink: 0 },
