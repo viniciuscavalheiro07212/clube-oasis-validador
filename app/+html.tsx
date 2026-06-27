@@ -72,6 +72,20 @@ export default function Html({ children }: PropsWithChildren) {
               *::before,
               *::after {
                 box-sizing: border-box;
+                overscroll-behavior: none;
+                -webkit-overflow-scrolling: auto;
+                scroll-behavior: auto;
+              }
+
+              [style*="overflow"],
+              [style*="overflow-y"],
+              [style*="overflow: scroll"],
+              [style*="overflow-y: scroll"],
+              [style*="overflow: auto"],
+              [style*="overflow-y: auto"] {
+                overscroll-behavior: none !important;
+                overscroll-behavior-y: none !important;
+                -webkit-overflow-scrolling: auto !important;
               }
 
               input,
@@ -88,6 +102,51 @@ export default function Html({ children }: PropsWithChildren) {
         <script
           dangerouslySetInnerHTML={{
             __html: `
+              (function () {
+                var startY = 0;
+                var scrollTarget = null;
+
+                function getScrollableTarget(node) {
+                  while (node && node !== document.body && node !== document.documentElement) {
+                    var style = window.getComputedStyle(node);
+                    var canScroll = /(auto|scroll)/.test(style.overflowY || style.overflow);
+                    if (canScroll && node.scrollHeight > node.clientHeight + 1) {
+                      return node;
+                    }
+                    node = node.parentElement;
+                  }
+                  return null;
+                }
+
+                document.addEventListener("touchstart", function (event) {
+                  if (!event.touches || event.touches.length !== 1) return;
+                  startY = event.touches[0].clientY;
+                  scrollTarget = getScrollableTarget(event.target);
+                }, { passive: true });
+
+                document.addEventListener("touchmove", function (event) {
+                  if (!event.touches || event.touches.length !== 1) return;
+                  var target = scrollTarget || getScrollableTarget(event.target);
+                  if (!target) {
+                    event.preventDefault();
+                    return;
+                  }
+
+                  var currentY = event.touches[0].clientY;
+                  var deltaY = currentY - startY;
+                  var atTop = target.scrollTop <= 0;
+                  var atBottom = target.scrollTop + target.clientHeight >= target.scrollHeight - 1;
+
+                  if ((atTop && deltaY > 0) || (atBottom && deltaY < 0)) {
+                    event.preventDefault();
+                  }
+                }, { passive: false });
+
+                document.addEventListener("touchend", function () {
+                  scrollTarget = null;
+                }, { passive: true });
+              })();
+
               document.addEventListener("gesturestart", function (event) {
                 event.preventDefault();
               }, { passive: false });
